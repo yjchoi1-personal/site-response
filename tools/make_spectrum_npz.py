@@ -7,8 +7,9 @@ from tqdm import tqdm
 
 data_path_x = '../eq-data/FKSH17/data_all_x/*.csv'
 data_path_y = '../eq-data/FKSH17/data_all_y/*.csv'
-save_name = 'data_all.npz'
-save_name_freq = 'data_all_freq.npz'
+save_dir = "/work2/08264/baagee/frontera/site-response/eq-data/FKSH17/"
+save_name_train = 'spectrum_train.npz'
+save_name_test = 'spectrum_test.npz'
 train_range = [0, 80]
 test_range = [80, 100]
 dt = 0.01  # time step of acceleration time series
@@ -35,59 +36,81 @@ train_files_y = csv_files_y[train_range[0]:train_range[1]]
 test_files_x = csv_files_x[test_range[0]:test_range[1]]
 test_files_y = csv_files_y[test_range[0]:test_range[1]]
 
+def process_data(file_list_x, file_list_y, dt, periods, visualize=False):
+    n_feature_x = 3
+    n_feature_y = 1
 
-# Frequency date
-training_example_freq = {}
+    # init variables for statistics
+    cumulative_count = 0
+    cumulative_sum = np.zeros(n_feature_x)
+    cumulative_sumsq = np.zeros(n_feature_x)
 
-def process_data(file_list, dt, periods, ncols):
+    data_dict = {"data": {}, "statistics": {}}
+    for i, (file_x, file_y) in tqdm(enumerate(zip(file_list_x, file_list_y))):
+        # Load data
+        data_x = np.loadtxt(file_x, delimiter=',', skiprows=1)  # shape=(12000, 3)
+        data_y = np.loadtxt(file_y, delimiter=',', skiprows=1)  # shape=(12000, )
+
+        # Processing for frequency domain representation
+        Spectrum_x = calculate_spectrum([data_x], dt, periods, ncols=n_feature_x)
+        Spectrum_y = calculate_spectrum([data_y], dt, periods, ncols=n_feature_y)
+
+        # Get sum and sum squared for statistics
+        cumulative_count += len(Spectrum_x)
+        cumulative_sum += np.sum(Spectrum_x, axis=0)
+        cumulative_sumsq += np.sum(Spectrum_x ** 2, axis=0)
+
+        # Statistics for cumulative data
+        cumulative_mean = cumulative_sum / cumulative_count
+        cumulative_std = np.sqrt(
+            cumulative_sumsq/cumulative_count - cumulative_mean**2)
+
+        data_dict["data"][f"earthquake-{i}"] = {
+            "id": (file_x, file_y),
+            "x": Spectrum_x,
+            "y": Spectrum_y,
+        }
+
+        if visualize:
+            # Viz
+            fig1, axes = plt.subplots(3, 1)
+            periods_concat = np.concatenate(periods)
+            for ax_id, ax in enumerate(axes):
+                ax.plot(periods_concat, Spectrum_x[:, ax_id])
+
+            fig2, ax = plt.subplots()
+            ax.plot(periods_concat, Spectrum_y)
+            plt.show()
+
+    data_dict["statistics"] = {
+        "feature_mean": cumulative_mean,
+        "feature_std": cumulative_std
+    }
+
+    return data_dict
+
+
+def calculate_spectrum(datasets, dt, periods, ncols):
     SA = []
-    for file_path in file_list:
-        data = np.loadtxt(file_path, delimiter=',', skiprows=1)
+    for data in datasets:
         sa_values = []
         for col_index in range(ncols):
-            if ncols > 1:
-                value = data[:, col_index]
-            elif ncols == 1:
-                value = data
-            else:
-                raise NotImplemented
+            values = data[:, col_index] if ncols > 1 else data
             sa_period_results = []
             for period in periods:
-                record = eqsig.AccSignal(value, dt)
+                record = eqsig.AccSignal(values, dt)
                 record.generate_response_spectrum(response_times=period)
                 sa_period_results.append(record.s_a)
             sa_values.append(np.hstack(sa_period_results))
         SA.append(np.vstack(sa_values))
-        response_spectrum = np.transpose(np.vstack(SA))
-
-        # Viz
-        # fig, axes = plt.subplots(3, 1)
-        # periods_concat = np.concatenate(periods)
-        # for i, ax in enumerate(axes):
-        #     ax.plot(periods_concat, response_spectrum[:, i])
-        # plt.show()
-
+    response_spectrum = np.transpose(np.vstack(SA))
     return response_spectrum
 
-# Process data
-training_example_freq = {}
-for i, (file_x, file_y) in tqdm(enumerate(zip(csv_files_x, csv_files_y))):
-    Spectrum_x = process_data([file_x], dt, periods, ncols=3)
-    Spectrum_y = process_data([file_y], dt, periods, ncols=1)
-    periods_concat = np.concatenate(periods)
-    training_example_freq[f"earthquake-{i}"] = {
-        "id": (file_x, file_y), "x": Spectrum_x, "y": Spectrum_y, "periods": periods_concat}
 
-    # Viz
-    fig1, axes = plt.subplots(3, 1)
-    periods_concat = np.concatenate(periods)
-    for i, ax in enumerate(axes):
-        ax.plot(periods_concat, Spectrum_x[:, i])
+# Process and save training and testing data
+training_data = process_data(train_files_x, train_files_y, dt, periods)
+np.savez_compressed(f'{save_dir}/{save_name_train}', **training_data)
 
-    fig2, ax = plt.subplots()
-    ax.plot(periods_concat, Spectrum_y)
-    plt.show()
-a=1
+testing_data = process_data(test_files_x, test_files_y, dt, periods)
+np.savez_compressed(f'{save_dir}/{save_name_test}', **testing_data)
 
-np.savez_compressed(
-    f"/work2/08264/baagee/frontera/site-response/eq-data/FKSH17/{save_name_freq}", **training_example_freq)
