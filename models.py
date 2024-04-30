@@ -1,4 +1,5 @@
 import torch
+import math
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import List
@@ -44,15 +45,45 @@ def build_mlp(
 
     return mlp
 
+
+class simpleCNN(nn.Module):
+    def __init__(self, sequence_length, n_features):
+        super(simpleCNN, self).__init__()
+        self.conv1 = nn.Conv2d(n_features, sequence_length, kernel_size=(21, 1))
+        self.relu = nn.ReLU()
+        self.flatten = nn.Flatten()
+
+        # Dummy input to calculate the shape after conv and pool layers
+        dummy_input = torch.randn(1, n_features, sequence_length, 1)
+        dummy_output = self.flatten(self.relu(self.conv1(dummy_input)))
+        self.flat_features = dummy_output.numel()
+
+        self.fc1 = nn.Linear(self.flat_features, sequence_length)
+
+    def forward(self, x):
+        x = x.permute(0, 2, 1).unsqueeze(-1)
+        x = self.conv1(x)
+        x = self.relu(x)
+        x = self.flatten(x)
+        x = self.fc1(x)
+        return x
+
+
 class Conv1D(nn.Module):
     def __init__(self, sequence_length, n_features, mlp_hidden_dim=None, nmlp_layers=None):
         super(Conv1D, self).__init__()
         self.conv1 = nn.Conv1d(in_channels=n_features, out_channels=16, kernel_size=24)
+        self.relu1 = nn.ReLU()
         self.pool1 = nn.MaxPool1d(kernel_size=2)
+
         self.conv2 = nn.Conv1d(in_channels=16, out_channels=32, kernel_size=12)
+        self.relu2 = nn.ReLU()
         self.pool2 = nn.MaxPool1d(kernel_size=2)
+
         self.conv3 = nn.Conv1d(in_channels=32, out_channels=16, kernel_size=6)
+        self.relu3 = nn.ReLU()
         self.pool3 = nn.MaxPool1d(kernel_size=2)
+
         self.flatten = nn.Flatten()
 
         # Dummy input to calculate the shape after conv and pool layers
@@ -69,21 +100,28 @@ class Conv1D(nn.Module):
         # self.layer_norm = nn.LayerNorm(sequence_length)
 
     def forward(self, x):
-        # Reshape input to (batch_size, n_features, sequence_length)
+        # Reshape input to (batch_size, embedding, sequence_length)
         x = x.permute(0, 2, 1)
-        # Shape: (batch_size, n_features, time_steps) -> (batch_size, 16, time_steps - 24 + 1)
+
+        # Shape: (batch_size, embedding, time_steps) -> (batch_size, 16, time_steps - 24 + 1)
         x = self.conv1(x)
-        x = F.relu(x)
+        x = self.relu1(x)
+
         # Shape: (batch_size, 16, time_steps - 24 + 1) -> (batch_size, 16, (time_steps - 24 + 1) / 2)
         x = self.pool1(x)
+
         # Shape: (batch_size, 16, (time_steps - 24 + 1) / 2) -> (batch_size, 32, ((time_steps - 24 + 1) / 2 - 12 + 1))
         x = self.conv2(x)
-        x = F.relu(x)
+        x = self.relu2(x)
+
         # Shape: (batch_size, 32, ((time_steps - 24 + 1) / 2 - 12 + 1)) -> (batch_size, 32, (((time_steps - 24 + 1) / 2 - 12 + 1) / 2))
         x = self.pool2(x)
+
         x = self.conv3(x)
-        x = F.relu(x)
+        x = self.relu3(x)
+
         x = self.pool3(x)
+
         x = self.flatten(x)
         x = self.dense(x)
 
@@ -130,8 +168,88 @@ class SequenceLSTM(nn.Module):
 
         return x
 
+
+class TimeSeriesTransformer(nn.Module):
+    def __init__(
+            self,
+            sequence_length,
+            n_input_features,
+            embedding_size=16,
+            nhead=2,
+            num_encoder_layers=3,
+            dim_feedforward=2048,
+            dropout=0.1,
+            positional_encoding=False):
+        super(TimeSeriesTransformer, self).__init__()
+
+        # Model Hyperparameters
+        self.sequence_length = sequence_length
+        self.n_input_features = n_input_features
+        self.embedding_size = embedding_size
+        self.positional_encoding = positional_encoding
+
+        # Embed
+        self.dense = nn.Linear(n_input_features, embedding_size)
+
+        # Positional encoding for adding notion of time step
+        if self.positional_encoding:
+            self.positional_encoder = PositionalEncoding(
+                sequence_length, embedding_size)
+
+        # Transformer Layer
+        self.transformer = nn.Transformer(
+            d_model=embedding_size,
+            nhead=nhead,
+            num_encoder_layers=num_encoder_layers,
+            dim_feedforward=dim_feedforward,
+            dropout=dropout,
+            batch_first=True)
+
+        # Output linear layer to match output dimensions
+        self.output_linear = nn.Linear(embedding_size, 1)
+
+    def forward(self, x):
+        # x shape is expected to be (nbatch, sequence_len, ndim)
+        nbatch, sequence_len, ndim = x.shape
+
+        # Reshape x to (-1, ndim) to apply the linear transformation
+        x = x.reshape(-1, ndim)
+
+        # x to latent dim
+        x = self.dense(x)
+        x = x.view(nbatch, sequence_len, self.embedding_size)
+
+        # Add positional encoding
+        if self.positional_encoding:
+            x = self.positional_encoder(x)
+
+        # Transformer
+        x = self.transformer(x, x)  # Encoder self-attention
+
+        # Pass through the output linear layer
+        x = self.output_linear(x)
+
+        return x.squeeze(-1)
+
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, sequence_length, embedding_size):
+        super(PositionalEncoding, self).__init__()
+        self.sequence_length = sequence_length
+        self.embedding = nn.Embedding(sequence_length, embedding_size)
+
+    def forward(self, x):
+        device = x.device
+        positions = torch.arange(0, self.sequence_length, device=device)
+        embedded_positions = self.embedding(positions)
+        x = x + embedded_positions
+        return x
+
+
+
 def save_checkpoint(state, filename="checkpoint.pth"):
     torch.save(state, filename)
+
 
 def load_checkpoint(filename="checkpoint.pth"):
     if os.path.isfile(filename):
