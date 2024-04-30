@@ -1,6 +1,106 @@
 import numpy as np
 import eqsig.single
 import torch
+import models
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+
+def test_vis(
+        period_ranges,
+        response_pred,
+        response_true,
+        loss,
+        output_path,
+        file_names,
+        index):
+    """
+    Plots the predicted and true response spectra.
+
+    Args:
+    period_ranges (tuple): Tuple of period ranges for the spectrum.
+    outputs_smooth (torch.Tensor): Smoothed model outputs.
+    targets (torch.Tensor): True target values.
+    file_names (list): List of file names associated with the data.
+    loss (float): Computed loss for the batch.
+    output_path (str): Path where the plot should be saved.
+    index (int): Index of the plot for file naming.
+
+    Returns:
+    None
+    """
+    # Concatenate periods from the defined ranges
+    periods = [np.linspace(start, end, num, endpoint=False) for start, end, num in period_ranges]
+    periods = np.concatenate(periods)
+
+    # Create the plot
+    fig, ax = plt.subplots(figsize=(5, 3.5))
+    ax.plot(periods, response_pred, linewidth=3, label="Pred")
+    ax.plot(periods, response_true, linewidth=3, label="True")
+    ax.set_xlabel("Period (sec)")
+    ax.set_ylabel("SA (g)")
+    ax.set_xlim([0.01, 10])
+    ax.set_xscale('log')
+    ax.set_title(f"x={file_names[0]}, y={file_names[1]}, MSE={loss:.3e}", fontsize=10)
+    plt.tight_layout()
+    plt.legend()
+
+    # Save the plot
+    plt.savefig(f"{output_path}/site{index}-{file_names[0]}.png")
+    plt.close(fig)
+
+
+def init_model(
+        model_type, sequence_length, n_features,
+        positional_encoding=False):
+    """
+    Initiate model
+    Args:
+        model_type (str): "lstm", "cnn", "transformer", "simpleCNN"
+        sequence_length (int): array length of spectrum values
+        n_features (int): number of input features
+        positional_encoding (bool): only for transformer
+
+    Returns:
+        model object
+    """
+
+    # init model
+    if model_type == "lstm":
+        model = models.SequenceLSTM(sequence_length, n_features)
+    elif model_type == "cnn":
+        model = models.Conv1D(sequence_length, n_features)
+    elif model_type == "transformer":
+        model = models.TimeSeriesTransformer(sequence_length, n_features, positional_encoding)
+    elif model_type == "simpleCNN":
+        model = models.simpleCNN(sequence_length, n_features)
+    else:
+        raise ValueError
+
+    return model
+
+
+def normalize_inputs(inputs, normalize_stats, option):
+    """
+    Normalize inputs: "minmax" or "standardization"
+    Args:
+        inputs (torch.tensor): inputs with shape=(sequence_length, n_features)
+        normalize_stats (dict): a dictionary that contains statistics of the input features
+        option (str): "standardization" or "minmax"
+    Returns:
+    Normalized input
+    """
+
+    if option == "standardization":
+        normalized_inputs = (
+                (inputs - normalize_stats["mean"]) / normalize_stats["std"])
+    elif option == "minmax":
+        normalized_inputs = (inputs - normalize_stats["min"]) / (normalize_stats["max"] - normalize_stats["min"])
+    else:
+        raise ValueError
+
+    return normalized_inputs
 
 
 def time2freq(timeseries_data, dt, periods):

@@ -13,12 +13,13 @@ import json
 site_id = 'FKSH17'
 model_id = 'transformer_standardization'
 model_type = "transformer"  # "cnn" or "transformer" or "simpleCNN"
-normalization = "standardization"  # "minmax" or "standardization"
+normalize_type = "standardization"  # "minmax" or "standardization"
 mode = "test"  # "train" or "test"
 train_batch = 4
 valid_batch = 10
 num_epochs = 100
 resume = False
+positional_encoding = False
 
 data_path = f'data/datasets/{site_id}/'
 train_data_path = f'{data_path}/spectrum_train.npz'
@@ -34,7 +35,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 train_losses = []
 valid_losses = []
 
-# set folders for model checkpoint and testoutputs
+# set folders for model checkpoint and test outputs
 if not os.path.exists(output_path):
     os.makedirs(output_path, exist_ok=True)
 if not os.path.exists(checkpoint_path):
@@ -45,14 +46,16 @@ ds_train, train_statistics = data_loader.get_data(
     path=train_data_path, batch_size=train_batch)
 
 # Normalization stat
-mean = torch.tensor(train_statistics["feature_mean"]).to(torch.float32).to(device)
-std = torch.tensor(train_statistics["feature_std"]).to(torch.float32).to(device)
-max_val = torch.tensor(train_statistics["feature_max"]).to(torch.float32).to(device)
-min_val = torch.tensor(train_statistics["feature_min"]).to(torch.float32).to(device)
+normalize_stats = {
+    "mean": torch.tensor(train_statistics["feature_mean"]).to(torch.float32).to(device),
+    "std": torch.tensor(train_statistics["feature_std"]).to(torch.float32).to(device),
+    "max": torch.tensor(train_statistics["feature_max"]).to(torch.float32).to(device),
+    "min": torch.tensor(train_statistics["feature_min"]).to(torch.float32).to(device)
+}
 
 if mode == 'train':
     if valid:
-        ds_valid, valid_statistics = data_loader.get_data(
+        ds_valid, _ = data_loader.get_data(
             path=test_data_path, batch_size=valid_batch, shuffle=True)
 
     # Get necessary variables about data from dataset
@@ -61,17 +64,9 @@ if mode == 'train':
     sequence_length = ds_batch[1][0].shape[1]
     n_features = ds_batch[1][0].shape[-1]
 
-    # init model
-    if model_type == "lstm":
-        model = models.SequenceLSTM(sequence_length, n_features)
-    elif model_type == "cnn":
-        model = models.Conv1D(sequence_length, n_features)
-    elif model_type == "transformer":
-        model = models.TimeSeriesTransformer(sequence_length, n_features, positional_encoding=True)
-    elif model_type == "simpleCNN":
-        model = models.simpleCNN(sequence_length, n_features)
-    else:
-        raise ValueError
+    # Initiate model
+    model = utils.init_model(
+        model_type, sequence_length, n_features, positional_encoding)
 
     # init loss measure
     criterion = nn.MSELoss()
@@ -104,13 +99,8 @@ if mode == 'train':
             # inputs=(None, 500, 3), targets=(None, 500, 1)
             inputs, targets = inputs.to(device), targets.to(device)
 
-            # Normalize inputs: "minmax" or "standardization"
-            if normalization == "standardization":
-                normalized_inputs = ((inputs - mean) / std)
-            elif normalization == "minmax":
-                normalized_inputs = (inputs - min_val) / (max_val - min_val)
-            else:
-                raise ValueError
+            # Normalize inputs
+            normalized_inputs = utils.normalize_inputs(inputs, normalize_stats, normalize_type)
 
             # Forward pass: compute the model output
             outputs = model(normalized_inputs)
@@ -142,9 +132,10 @@ if mode == 'train':
                     inputs, targets = inputs.to(device), targets.to(device)
 
                     # Normalize inputs
-                    normalized_inputs = ((inputs - mean) / std)
+                    normalized_inputs = utils.normalize_inputs(inputs, normalize_stats, normalize_type)
 
                     outputs = model(inputs)
+
                     loss = criterion(outputs, targets.squeeze())
                     valid_losses.append([iteration, loss.item()])
                     valid_running_loss += loss.item()
@@ -178,16 +169,8 @@ elif mode == "test":
     sequence_length = ds_batch[1][0].shape[1]
     n_features = ds_batch[1][0].shape[-1]
 
-    if model_type == "lstm":
-        model = models.SequenceLSTM(sequence_length, n_features)
-    elif model_type == "cnn":
-        model = models.Conv1D(sequence_length, n_features)
-    elif model_type == "transformer":
-        model = models.TimeSeriesTransformer(sequence_length, n_features, positional_encoding=True)
-    elif model_type == "simpleCNN":
-        model = models.simpleCNN(sequence_length, n_features)
-    else:
-        raise ValueError
+    model = utils.init_model(
+        model_type, sequence_length, n_features, positional_encoding)
 
     checkpoint = torch.load(f'{checkpoint_path}/{checkpoint_file}')
     model.load_state_dict(checkpoint['model_state_dict'])
@@ -202,13 +185,8 @@ elif mode == "test":
             # Move data to the same device as the model
             inputs, targets = inputs.to(device), targets.to(device)
 
-            # Normalize inputs: "minmax" or "standardization"
-            if normalization == "standardization":
-                normalized_inputs = ((inputs - mean) / std)
-            elif normalization == "minmax":
-                normalized_inputs = (inputs - min_val) / (max_val - min_val)
-            else:
-                raise ValueError
+            # Normalize inputs
+            normalized_inputs = utils.normalize_inputs(inputs, normalize_stats, normalize_type)
 
             # Forward pass: compute the model output
             outputs = model(normalized_inputs)
@@ -216,7 +194,7 @@ elif mode == "test":
             outputs_smooth = utils.smoothen(outputs.squeeze(), device)
 
             # Compute the loss
-            nan_range = [4, -4]
+            nan_range = [4, -4]  # Since above smoothen function removes first 4 and last 4 values, returning NaN,
             loss = criterion(
                 outputs_smooth[:, nan_range[0]:nan_range[1]],
                 targets.squeeze(-1)[:, nan_range[0]:nan_range[1]])
@@ -226,20 +204,7 @@ elif mode == "test":
             # Visualize prediction
             response_pred = outputs_smooth.cpu().numpy().squeeze(0)
             response_true = targets.cpu().numpy().squeeze(0)
-            periods = [np.linspace(start, end, num, endpoint=False) for start, end, num in period_ranges]
-            periods = np.concatenate(periods)
-            fig, ax = plt.subplots(figsize=(5, 3.5))
-            ax.plot(periods, response_pred, linewidth=3, label="Pred")
-            ax.plot(periods, response_true, linewidth=3, label="True")
-            ax.set_xlabel("Period (sec)")
-            ax.set_ylabel("SA (g)")
-            ax.set_xlim([0.01, 10])
-            ax.set_xscale('log')
-            ax.set_title(f"x={file_names[0]}, y={file_names[1]}, MSE={loss:.3e}", fontsize=10)
-            plt.tight_layout()
-            plt.legend()
-            plt.savefig(f"{output_path}/site{i}-{file_names[0]}.png")
-            plt.show()
+            utils.test_vis(period_ranges, response_pred, response_true, loss, output_path, file_names, i)
 
     avg_loss = total_loss / len(ds)
     print(f'Average Test Loss: {avg_loss:.3e}')
