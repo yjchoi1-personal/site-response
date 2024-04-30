@@ -3,23 +3,29 @@ import matplotlib.pyplot as plt
 import torch
 import numpy as np
 import data_loader
-import model_ann
+import models
 import torch.nn as nn
 import pickle
 import utils
+import json
 
 
 site_id = 'FKSH17'
+model_id = 'transformer_standardization'
+model_type = "transformer"  # "cnn" or "transformer" or "simpleCNN"
+normalization = "standardization"  # "minmax" or "standardization"
+mode = "test"  # "train" or "test"
+train_batch = 4
+valid_batch = 10
+num_epochs = 100
+resume = False
+
 data_path = f'data/datasets/{site_id}/'
 train_data_path = f'{data_path}/spectrum_train.npz'
-test_data_path = f'{data_path }/spectrum_test.npz'
-output_path = f'data/outputs/{site_id}/'
-checkpoint_path = f'data/checkpoints/{site_id}/'
+test_data_path = f'{data_path}/spectrum_test.npz'
+output_path = f'data/outputs/{site_id}-{model_id}/'
+checkpoint_path = f'data/checkpoints/{site_id}-{model_id}/'
 checkpoint_file = 'checkpoint.pth'
-resume = False
-num_epochs = 100
-mlp_hidden_dim = 128
-mode = "test"  # "train" or "test"
 period_ranges = ((0.01, 0.1, 167), (0.1, 1, 167), (1, 10, 166))
 valid = True
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -36,25 +42,37 @@ if not os.path.exists(checkpoint_path):
 
 # load training ata
 ds_train, train_statistics = data_loader.get_data(
-    path=train_data_path, batch_size=10)
+    path=train_data_path, batch_size=train_batch)
 
 # Normalization stat
 mean = torch.tensor(train_statistics["feature_mean"]).to(torch.float32).to(device)
 std = torch.tensor(train_statistics["feature_std"]).to(torch.float32).to(device)
+max_val = torch.tensor(train_statistics["feature_max"]).to(torch.float32).to(device)
+min_val = torch.tensor(train_statistics["feature_min"]).to(torch.float32).to(device)
 
 if mode == 'train':
     if valid:
         ds_valid, valid_statistics = data_loader.get_data(
-            path=test_data_path, batch_size=4, shuffle=False)
+            path=test_data_path, batch_size=valid_batch, shuffle=True)
 
     # Get necessary variables about data from dataset
     ds_iterator = iter(ds_train)
     ds_batch = next(ds_iterator)
-    sequence_length = ds_batch[0].shape[1]
-    n_features = ds_batch[0].shape[-1]
+    sequence_length = ds_batch[1][0].shape[1]
+    n_features = ds_batch[1][0].shape[-1]
 
     # init model
-    model = model_ann.SequenceLSTM(sequence_length, n_features)
+    if model_type == "lstm":
+        model = models.SequenceLSTM(sequence_length, n_features)
+    elif model_type == "cnn":
+        model = models.Conv1D(sequence_length, n_features)
+    elif model_type == "transformer":
+        model = models.TimeSeriesTransformer(sequence_length, n_features, positional_encoding=True)
+    elif model_type == "simpleCNN":
+        model = models.simpleCNN(sequence_length, n_features)
+    else:
+        raise ValueError
+
     # init loss measure
     criterion = nn.MSELoss()
     # init optimizer
@@ -62,7 +80,7 @@ if mode == 'train':
 
     # Try to load existing checkpoint
     if resume:
-        checkpoint = model_ann.load_checkpoint(f'{checkpoint_path}/{checkpoint_file}')
+        checkpoint = models.load_checkpoint(f'{checkpoint_path}/{checkpoint_file}')
         if checkpoint:
             model.load_state_dict(checkpoint['model_state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -86,9 +104,13 @@ if mode == 'train':
             # inputs=(None, 500, 3), targets=(None, 500, 1)
             inputs, targets = inputs.to(device), targets.to(device)
 
-            # Normalize inputs
-
-            normalized_inputs = ((inputs - mean) / std)
+            # Normalize inputs: "minmax" or "standardization"
+            if normalization == "standardization":
+                normalized_inputs = ((inputs - mean) / std)
+            elif normalization == "minmax":
+                normalized_inputs = (inputs - min_val) / (max_val - min_val)
+            else:
+                raise ValueError
 
             # Forward pass: compute the model output
             outputs = model(normalized_inputs)
@@ -102,7 +124,7 @@ if mode == 'train':
             optimizer.step()       # Update model parameters
 
             # Track the loss
-            print(f"Step {iteration}: {loss.item():.4f}")
+            print(f"Step {iteration}: {loss.item():.4e}")
             train_losses.append([iteration, loss.item()])
             train_running_loss += loss.item()
             iteration += 1
@@ -129,12 +151,12 @@ if mode == 'train':
             valid_loss = valid_running_loss / len(ds_valid)
 
 
-        print(f"Epoch {epoch + 1}/{num_epochs}, Training Loss: {train_loss:.4f}")
+        print(f"Epoch {epoch + 1}/{num_epochs}, Training Loss: {train_loss:.4e}")
         if valid:
-            print(f"Epoch {epoch + 1}/{num_epochs}, Validation Loss: {valid_loss:.4f}")
+            print(f"Epoch {epoch + 1}/{num_epochs}, Validation Loss: {valid_loss:.4e}")
 
         # Save the model checkpoint
-        model_ann.save_checkpoint({
+        models.save_checkpoint({
             'epoch': epoch,
             'iteration': iteration,
             'model_state_dict': model.state_dict(),
@@ -156,8 +178,17 @@ elif mode == "test":
     sequence_length = ds_batch[1][0].shape[1]
     n_features = ds_batch[1][0].shape[-1]
 
-    model = model_ann.SequenceLSTM(
-        sequence_length, n_features, mlp_hidden_dim=128, nmlp_layers=2)
+    if model_type == "lstm":
+        model = models.SequenceLSTM(sequence_length, n_features)
+    elif model_type == "cnn":
+        model = models.Conv1D(sequence_length, n_features)
+    elif model_type == "transformer":
+        model = models.TimeSeriesTransformer(sequence_length, n_features, positional_encoding=True)
+    elif model_type == "simpleCNN":
+        model = models.simpleCNN(sequence_length, n_features)
+    else:
+        raise ValueError
+
     checkpoint = torch.load(f'{checkpoint_path}/{checkpoint_file}')
     model.load_state_dict(checkpoint['model_state_dict'])
     model.to(device)
@@ -171,8 +202,13 @@ elif mode == "test":
             # Move data to the same device as the model
             inputs, targets = inputs.to(device), targets.to(device)
 
-            # Normalize inputs
-            normalized_inputs = ((inputs - mean) / std)
+            # Normalize inputs: "minmax" or "standardization"
+            if normalization == "standardization":
+                normalized_inputs = ((inputs - mean) / std)
+            elif normalization == "minmax":
+                normalized_inputs = (inputs - min_val) / (max_val - min_val)
+            else:
+                raise ValueError
 
             # Forward pass: compute the model output
             outputs = model(normalized_inputs)
@@ -180,7 +216,10 @@ elif mode == "test":
             outputs_smooth = utils.smoothen(outputs.squeeze(), device)
 
             # Compute the loss
-            loss = criterion(outputs, targets.squeeze(-1))
+            nan_range = [4, -4]
+            loss = criterion(
+                outputs_smooth[:, nan_range[0]:nan_range[1]],
+                targets.squeeze(-1)[:, nan_range[0]:nan_range[1]])
 
             total_loss += loss.item()  # Sum up batch loss
 
@@ -190,16 +229,22 @@ elif mode == "test":
             periods = [np.linspace(start, end, num, endpoint=False) for start, end, num in period_ranges]
             periods = np.concatenate(periods)
             fig, ax = plt.subplots(figsize=(5, 3.5))
-            ax.plot(periods, response_pred, linewidth=3, label="LSTM")
+            ax.plot(periods, response_pred, linewidth=3, label="Pred")
             ax.plot(periods, response_true, linewidth=3, label="True")
             ax.set_xlabel("Period (sec)")
             ax.set_ylabel("SA (g)")
             ax.set_xlim([0.01, 10])
             ax.set_xscale('log')
-            ax.set_title(f"MSE={loss:.3e}")
+            ax.set_title(f"x={file_names[0]}, y={file_names[1]}, MSE={loss:.3e}", fontsize=10)
             plt.tight_layout()
             plt.legend()
+            plt.savefig(f"{output_path}/site{i}-{file_names[0]}.png")
             plt.show()
 
     avg_loss = total_loss / len(ds)
-    print(f'Average Test Loss: {avg_loss:.4f}')
+    print(f'Average Test Loss: {avg_loss:.3e}')
+    save_avg_loss = {"avg_loss": avg_loss}
+    # the json file where the output must be stored
+    out_file = open(f"{output_path}/avg_loss.json", "w")
+    json.dump(save_avg_loss, out_file, indent=4)
+    out_file.close()
