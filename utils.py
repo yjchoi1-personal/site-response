@@ -31,7 +31,7 @@ def smoothen(sequence, device):
     weights /= weights.sum()
 
     # The result tensor will have the same shape as the input but will be of type float due to division
-    result = torch.full(sequence.shape, float('nan'))
+    result = torch.full(sequence.shape, float('nan')).to(device)
 
     # Apply the weighted moving average to each element in the sequence
     for i in range(4, sequence.size(0) - 4):
