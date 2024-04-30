@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset_name', default="FKSH17", type=str, help="Earthquake data name")
+parser.add_argument('--dataset_name', default="FKSH19", type=str, help="Earthquake data name")
 args = parser.parse_args()
 
 work_dir = "/work2/08264/baagee/frontera/site-response/"
@@ -91,6 +91,9 @@ def process_data(
         # Load data
         data_x = np.loadtxt(file_x, delimiter=',', skiprows=1)  # shape=(12000, 3)
         data_y = np.loadtxt(file_y, delimiter=',', skiprows=1)  # shape=(12000, )
+        # If data_y has 3 features, only select the first column which is accel.
+        if data_y.ndim == 2 and data_y.shape[1] == 3:
+            data_y = data_y[:, 0]
 
         # Processing for frequency domain representation
         Spectrum_x = calculate_spectrum(
