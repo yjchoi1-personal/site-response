@@ -81,8 +81,9 @@ if mode == 'train':
         model.train()  # Set the model to training mode
         train_running_loss = 0.0
 
-        for inputs, targets in ds_train:
+        for _, (inputs, targets) in ds_train:
             # Move data to the same device as the model
+            # inputs=(None, 500, 3), targets=(None, 500, 1)
             inputs, targets = inputs.to(device), targets.to(device)
 
             # Normalize inputs
@@ -115,7 +116,7 @@ if mode == 'train':
             model.eval()
             valid_running_loss = 0.0
             with torch.no_grad():
-                for inputs, targets in ds_valid:
+                for _, (inputs, targets) in ds_valid:
                     inputs, targets = inputs.to(device), targets.to(device)
 
                     # Normalize inputs
@@ -152,8 +153,8 @@ elif mode == "test":
     ds_iterator = iter(ds)
     # extract batch
     ds_batch = next(ds_iterator)
-    sequence_length = ds_batch[0].shape[1]
-    n_features = ds_batch[0].shape[-1]
+    sequence_length = ds_batch[1][0].shape[1]
+    n_features = ds_batch[1][0].shape[-1]
 
     model = model_ann.SequenceLSTM(
         sequence_length, n_features, mlp_hidden_dim=128, nmlp_layers=2)
@@ -166,7 +167,7 @@ elif mode == "test":
     criterion = torch.nn.MSELoss()
 
     with torch.no_grad():  # No need to track gradients during evaluation
-        for inputs, targets in ds:
+        for i, (file_names, (inputs, targets)) in enumerate(ds):
             # Move data to the same device as the model
             inputs, targets = inputs.to(device), targets.to(device)
 

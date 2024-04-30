@@ -16,11 +16,12 @@ class SamplesDataset(torch.utils.data.Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        x = torch.tensor(self.data[idx]['x']).to(torch.float32)
-        y = torch.tensor(self.data[idx]['y']).to(torch.float32)
+        id = self.data[idx]['id']
+        x = torch.tensor(self.data[idx]['x']).to(torch.float32)  # (500, 3)
+        y = torch.tensor(self.data[idx]['y']).to(torch.float32)  # (500, 1)
         training_example = (x, y)
 
-        return training_example
+        return id, training_example
 
     def get_statistics(self):
         return self.statistics
