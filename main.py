@@ -7,12 +7,13 @@ import models
 import torch.nn as nn
 import pickle
 import utils
+import argparse
 import json
 
 
-site_id = 'FKSH17'
-model_id = 'transformer_standardization'
-model_type = "transformer"  # "cnn" or "transformer" or "simpleCNN"
+site_id = 'sample_FKSH17'
+model_id = 'cnn'
+model_type = "cnn"  # "cnn" or "transformer" or "simpleCNN"
 normalize_type = "standardization"  # "minmax" or "standardization"
 mode = "test"  # "train" or "test"
 train_batch = 4
@@ -31,47 +32,28 @@ period_ranges = ((0.01, 0.1, 167), (0.1, 1, 167), (1, 10, 166))
 valid = True
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Initialize empty lists to store loss histories
-train_losses = []
-valid_losses = []
 
-# set folders for model checkpoint and test outputs
-if not os.path.exists(output_path):
-    os.makedirs(output_path, exist_ok=True)
-if not os.path.exists(checkpoint_path):
-    os.makedirs(checkpoint_path, exist_ok=True)
+def train(
+        model, ds_train, ds_valid,
+        normalize_stats, normalize_type,
+        num_epochs,
+        checkpoint_path,
+        checkpoint_file,
+        valid, device):
 
-# load training ata
-ds_train, train_statistics = data_loader.get_data(
-    path=train_data_path, batch_size=train_batch)
+    # set folders for model checkpoint.
+    if not os.path.exists(output_path):
+        os.makedirs(output_path, exist_ok=True)
 
-# Normalization stat
-normalize_stats = {
-    "mean": torch.tensor(train_statistics["feature_mean"]).to(torch.float32).to(device),
-    "std": torch.tensor(train_statistics["feature_std"]).to(torch.float32).to(device),
-    "max": torch.tensor(train_statistics["feature_max"]).to(torch.float32).to(device),
-    "min": torch.tensor(train_statistics["feature_min"]).to(torch.float32).to(device)
-}
-
-if mode == 'train':
-    if valid:
-        ds_valid, _ = data_loader.get_data(
-            path=test_data_path, batch_size=valid_batch, shuffle=True)
-
-    # Get necessary variables about data from dataset
-    ds_iterator = iter(ds_train)
-    ds_batch = next(ds_iterator)
-    sequence_length = ds_batch[1][0].shape[1]
-    n_features = ds_batch[1][0].shape[-1]
-
-    # Initiate model
-    model = utils.init_model(
-        model_type, sequence_length, n_features, positional_encoding)
-
-    # init loss measure
     criterion = nn.MSELoss()
-    # init optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+
+    # Initialize empty lists to store loss histories
+    train_losses = []
+    valid_losses = []
+
+    start_epoch = 0
+    iteration = 0
 
     # Try to load existing checkpoint
     if resume:
@@ -80,73 +62,38 @@ if mode == 'train':
             model.load_state_dict(checkpoint['model_state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             start_epoch = checkpoint['epoch'] + 1
+            iteration = checkpoint['iteration']
             print(f"Resume start from {start_epoch}")
     else:
         start_epoch = 0
 
-    # Move the model to the appropriate device
-    model.to(device)
-
-    # Start training
-    iteration = 0 if not resume else checkpoint['iteration']
-
-    for epoch in np.arange(start_epoch, num_epochs):
+    for epoch in range(start_epoch, num_epochs):
         model.train()  # Set the model to training mode
         train_running_loss = 0.0
 
         for _, (inputs, targets) in ds_train:
-            # Move data to the same device as the model
-            # inputs=(None, 500, 3), targets=(None, 500, 1)
             inputs, targets = inputs.to(device), targets.to(device)
-
-            # Normalize inputs
-            normalized_inputs = utils.normalize_inputs(inputs, normalize_stats, normalize_type)
-
-            # Forward pass: compute the model output
+            normalized_inputs = utils.normalize_inputs(
+                inputs, normalize_stats, normalize_type)
             outputs = model(normalized_inputs)
-
-            # Compute the loss
             loss = criterion(outputs, targets.squeeze())
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
-            # Backward pass and optimize
-            optimizer.zero_grad()  # Clear previous gradients
-            loss.backward()        # Compute gradients
-            optimizer.step()       # Update model parameters
-
-            # Track the loss
-            print(f"Step {iteration}: {loss.item():.4e}")
-            train_losses.append([iteration, loss.item()])
+            train_losses.append(loss.item())
             train_running_loss += loss.item()
             iteration += 1
 
-        # Print average loss for the epoch
         train_loss = train_running_loss / len(ds_train)
-
-        # Valid
-        if valid:
-            # Validation phase
-            model.eval()
-            valid_running_loss = 0.0
-            with torch.no_grad():
-                for _, (inputs, targets) in ds_valid:
-                    inputs, targets = inputs.to(device), targets.to(device)
-
-                    # Normalize inputs
-                    normalized_inputs = utils.normalize_inputs(inputs, normalize_stats, normalize_type)
-
-                    outputs = model(inputs)
-
-                    loss = criterion(outputs, targets.squeeze())
-                    valid_losses.append([iteration, loss.item()])
-                    valid_running_loss += loss.item()
-            valid_loss = valid_running_loss / len(ds_valid)
-
-
         print(f"Epoch {epoch + 1}/{num_epochs}, Training Loss: {train_loss:.4e}")
+
         if valid:
+            valid_loss = validate_model(
+                model, ds_valid, criterion, normalize_stats, normalize_type, device)
+            valid_losses.append(valid_loss)
             print(f"Epoch {epoch + 1}/{num_epochs}, Validation Loss: {valid_loss:.4e}")
 
-        # Save the model checkpoint
         models.save_checkpoint({
             'epoch': epoch,
             'iteration': iteration,
@@ -158,34 +105,52 @@ if mode == 'train':
     with open(f'{checkpoint_path}/loss_histories.pkl', 'wb') as f:
         pickle.dump({'train_losses': train_losses, 'valid_losses': valid_losses}, f)
 
-elif mode == "test":
-    ds, _ = data_loader.get_data(
-        path=test_data_path, batch_size=1, shuffle=False)
 
-    # define iterator for use in training
-    ds_iterator = iter(ds)
-    # extract batch
-    ds_batch = next(ds_iterator)
-    sequence_length = ds_batch[1][0].shape[1]
-    n_features = ds_batch[1][0].shape[-1]
+def validate_model(
+        model,
+        ds_valid,
+        criterion,
+        normalize_stats, normalize_type,
+        device):
 
-    model = utils.init_model(
-        model_type, sequence_length, n_features, positional_encoding)
+    model.eval()
+    valid_running_loss = 0.0
+    with torch.no_grad():
+        for _, (inputs, targets) in ds_valid:
+            inputs, targets = inputs.to(device), targets.to(device)
+            normalized_inputs = utils.normalize_inputs(inputs, normalize_stats, normalize_type)
+            outputs = model(normalized_inputs)
+            loss = criterion(outputs, targets.squeeze())
+            valid_running_loss += loss.item()
 
+    return valid_running_loss / len(ds_valid)
+
+
+def predict(
+        model,
+        ds_test,
+        normalize_stats, normalize_type,
+        checkpoint_path, checkpoint_file,
+        output_path,
+        device):
+
+    # Set folders for test outputs
+    if not os.path.exists(checkpoint_path):
+        os.makedirs(checkpoint_path, exist_ok=True)
+
+    # Set the model to evaluation mode
+    model.eval()
+    total_loss = 0.0
+    criterion = nn.MSELoss()
+
+    # Load the model checkpoint
     checkpoint = torch.load(f'{checkpoint_path}/{checkpoint_file}')
     model.load_state_dict(checkpoint['model_state_dict'])
     model.to(device)
 
-    model.eval()  # Set the model to evaluation mode
-    total_loss = 0.0
-    criterion = torch.nn.MSELoss()
-
     with torch.no_grad():  # No need to track gradients during evaluation
-        for i, (file_names, (inputs, targets)) in enumerate(ds):
-            # Move data to the same device as the model
+        for i, (file_names, (inputs, targets)) in enumerate(ds_test):
             inputs, targets = inputs.to(device), targets.to(device)
-
-            # Normalize inputs
             normalized_inputs = utils.normalize_inputs(inputs, normalize_stats, normalize_type)
 
             # Forward pass: compute the model output
@@ -194,22 +159,83 @@ elif mode == "test":
             outputs_smooth = utils.smoothen(outputs.squeeze(), device)
 
             # Compute the loss
-            nan_range = [4, -4]  # Since above smoothen function removes first 4 and last 4 values, returning NaN,
+            nan_range = [4, -4]  # Adjusted for smoothen function that removes first 4 and last 4 values
             loss = criterion(
                 outputs_smooth[:, nan_range[0]:nan_range[1]],
                 targets.squeeze(-1)[:, nan_range[0]:nan_range[1]])
-
-            total_loss += loss.item()  # Sum up batch loss
+            total_loss += loss.item()
 
             # Visualize prediction
             response_pred = outputs_smooth.cpu().numpy().squeeze(0)
             response_true = targets.cpu().numpy().squeeze(0)
-            utils.test_vis(period_ranges, response_pred, response_true, loss, output_path, file_names, i)
+            utils.test_vis(
+                period_ranges,
+                response_pred, response_true, loss,
+                output_path, file_names, i)
 
-    avg_loss = total_loss / len(ds)
+    # Report total average loss
+    avg_loss = total_loss / len(ds_test)
     print(f'Average Test Loss: {avg_loss:.3e}')
+
+    # Save loss result
     save_avg_loss = {"avg_loss": avg_loss}
-    # the json file where the output must be stored
-    out_file = open(f"{output_path}/avg_loss.json", "w")
-    json.dump(save_avg_loss, out_file, indent=4)
-    out_file.close()
+    with open(f"{output_path}/avg_loss.json", "w") as out_file:
+        json.dump(save_avg_loss, out_file, indent=4)
+
+
+if __name__ == '__main__':
+
+    # Load training and validation data
+    ds_train, train_statistics = data_loader.get_data(
+        path=train_data_path, batch_size=train_batch)
+    ds_valid, _ = data_loader.get_data(
+        path=test_data_path, batch_size=valid_batch, shuffle=True)
+
+    # Normalization stat
+    normalize_stats = {
+        "mean": torch.tensor(train_statistics["feature_mean"]).to(torch.float32).to(device),
+        "std": torch.tensor(train_statistics["feature_std"]).to(torch.float32).to(device),
+        "max": torch.tensor(train_statistics["feature_max"]).to(torch.float32).to(device),
+        "min": torch.tensor(train_statistics["feature_min"]).to(torch.float32).to(device)
+    }
+
+    # Get necessary variables about data from dataset
+    ds_iterator = iter(ds_train)
+    ds_batch = next(ds_iterator)
+    sequence_length = ds_batch[1][0].shape[1]
+    n_features = ds_batch[1][0].shape[-1]
+
+    # Initiate model
+    model = utils.init_model(
+        model_type, sequence_length, n_features, positional_encoding
+    ).to(device)
+
+    if mode == "train":
+        train(
+            model=model,
+            ds_train=ds_train,
+            ds_valid=ds_valid,
+            normalize_stats=normalize_stats,
+            normalize_type=normalize_type,
+            num_epochs=num_epochs,
+            checkpoint_path=checkpoint_path,
+            checkpoint_file=checkpoint_file,
+            valid=True,
+            device=device
+        )
+
+    elif mode == "test":
+
+        ds_test, _ = data_loader.get_data(
+            path=test_data_path, batch_size=1, shuffle=True)
+
+        predict(
+            model=model,
+            ds_test=ds_test,
+            normalize_stats=normalize_stats,
+            normalize_type=normalize_type,
+            checkpoint_path=checkpoint_path,
+            checkpoint_file=checkpoint_file,
+            output_path=output_path,
+            device=device
+        )
