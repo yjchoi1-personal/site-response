@@ -36,13 +36,16 @@ def test_vis(
 
     # Create the plot
     fig, ax = plt.subplots(figsize=(5, 3.5))
-    ax.plot(periods, response_pred, linewidth=3, label="Pred")
-    ax.plot(periods, response_true, linewidth=3, label="True")
+    ax.plot(periods, response_pred,
+            linewidth=3, color='black', label="Pred")
+    ax.plot(periods, response_true,
+            linewidth=3, color='silver', label="True")
     ax.set_xlabel("Period (sec)")
     ax.set_ylabel("SA (g)")
     ax.set_xlim([0.01, 10])
+    ax.set_ylim([0, None])
     ax.set_xscale('log')
-    ax.set_title(f"x={file_names[0]}, y={file_names[1]}, MSE={loss:.3e}", fontsize=10)
+    ax.set_title(f"x={file_names[0][0]}, y={file_names[1][0]}, MSE={loss:.3e}", fontsize=10)
     plt.tight_layout()
     plt.legend()
 
@@ -71,23 +74,48 @@ def init_model(
     if model_type == "lstm":
         model = models.SequenceLSTM(
             sequence_length, n_features)
+
     elif model_type == "lstm2":
         relevant_kwargs = {
-            key: kwargs[key] for key in ['n_lstm_layers', "hidden_dim"] if key in kwargs}
+            key: kwargs[key] for key in [
+                'n_lstm_layers',
+                "hidden_dim"
+            ] if key in kwargs
+        }
         model = models.SequenceLSTM2(
             sequence_length, n_features, **relevant_kwargs)
+
     elif model_type == "cnn":
         model = models.Conv1D(
             sequence_length, n_features)
+
     elif model_type == "transformer":
         relevant_kwargs = {
-            key: kwargs[key] for key in ['positional_encoding'] if key in kwargs}
+            key: kwargs[key] for key in [
+                'embedding_size',
+                'nhead',
+                'num_encoder_layers',
+                'num_decoder_layers',
+                'dim_feedforward',
+                'dropout',
+                'positional_encoding'
+            ] if key in kwargs
+        }
         model = models.TimeSeriesTransformer(
             sequence_length, n_features,
             **relevant_kwargs)
+
     elif model_type == "transformer2":
+        relevant_kwargs = {
+            key: kwargs[key] for key in [
+                'positional_encoding'
+            ] if key in kwargs
+        }
         model = models.TimeSeriesTransformer2(
-            sequence_length, n_features)
+            sequence_length, n_features,
+            **relevant_kwargs
+        )
+
     elif model_type == "simpleCNN":
         model = models.simpleCNN(
             sequence_length, n_features)
@@ -141,7 +169,9 @@ def smoothen(sequence, device):
 
 
     # Define the weights for the moving average
-    weights = torch.tensor([1, 2, 3, 4, 5, 4, 3, 2, 1], dtype=torch.float32).to(device)
+    weights = torch.tensor(
+        [1, 2, 3, 4, 5, 4, 3, 2, 1],
+        dtype=torch.float32).to(device)
 
     # Normalize the weights so that they sum to 1
     weights /= weights.sum()

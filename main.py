@@ -9,20 +9,22 @@ import pickle
 import utils
 import argparse
 import json
+import evaluation
 
 
 site_id = 'FKSH17'
-model_id = 'debug'
-model_type = "lstm2"  # "cnn" or "transformer" or "simpleCNN"
+model_id = 'cnn'
+model_type = "cnn"  # "cnn" or "transformer" or "simpleCNN"
 normalize_type = "standardization"  # "minmax" or "standardization"
-mode = "train"  # "train" or "test"
+mode = "test"  # "train" or "test"
 train_batch = 4
 valid_batch = 10
-num_epochs = 100
+num_epochs = 200
+lr = 5e-4
 resume = False
 
 # For transformer
-positional_encoding = False
+positional_encoding = True
 
 # For lstm2
 n_lstm_layers = 3
@@ -41,19 +43,26 @@ criterion = nn.MSELoss()
 
 
 def train(
-        model, ds_train, ds_valid,
-        normalize_stats, normalize_type,
+        model,
+        normalize_stats,
+        normalize_type,
         num_epochs,
         checkpoint_path,
         checkpoint_file,
         valid,
         device):
 
-    # set folders for model checkpoint.
+    # Load training and validation data
+    ds_train, train_statistics = data_loader.get_data(
+        path=train_data_path, batch_size=train_batch)
+    ds_valid, _ = data_loader.get_data(
+        path=test_data_path, batch_size=valid_batch, shuffle=True)
+
+    # Set folders for model checkpoint.
     if not os.path.exists(checkpoint_path):
         os.makedirs(checkpoint_path, exist_ok=True)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     # Initialize empty lists to store loss histories
     train_losses = []
@@ -135,66 +144,6 @@ def validate_model(
     return valid_running_loss / len(ds_valid)
 
 
-def predict(
-        model,
-        ds_test,
-        normalize_stats, normalize_type,
-        checkpoint_path, checkpoint_file,
-        output_path,
-        device):
-
-    # Set folders for test outputs
-    if not os.path.exists(checkpoint_path):
-        raise ValueError(f"{checkpoint_path} not exist in {checkpoint_path}")
-    if not os.path.exists(output_path):
-        os.makedirs(output_path, exist_ok=True)
-
-    # Set the model to evaluation mode
-    model.eval()
-    total_loss = 0.0
-    criterion = nn.MSELoss()
-
-    # Load the model checkpoint
-    checkpoint = torch.load(f'{checkpoint_path}/{checkpoint_file}')
-    model.load_state_dict(checkpoint['model_state_dict'])
-    model.to(device)
-
-    with torch.no_grad():  # No need to track gradients during evaluation
-        for i, (file_names, (inputs, targets)) in enumerate(ds_test):
-            inputs, targets = inputs.to(device), targets.to(device)
-            normalized_inputs = utils.normalize_inputs(
-                inputs, normalize_stats, normalize_type)
-
-            # Forward pass: compute the model output
-            outputs = model(normalized_inputs)
-            # Apply weighted moving average to remove prediction noise
-            outputs_smooth = utils.smoothen(outputs.squeeze(), device)
-
-            # Compute the loss
-            nan_range = [4, -4]  # Adjusted for smoothen function that removes first 4 and last 4 values
-            loss = criterion(
-                outputs_smooth[:, nan_range[0]:nan_range[1]],
-                targets.squeeze(-1)[:, nan_range[0]:nan_range[1]])
-            total_loss += loss.item()
-
-            # Visualize prediction
-            response_pred = outputs_smooth.cpu().numpy().squeeze(0)
-            response_true = targets.cpu().numpy().squeeze(0)
-            utils.test_vis(
-                period_ranges,
-                response_pred, response_true, loss,
-                output_path, file_names, i)
-
-    # Report total average loss
-    avg_loss = total_loss / len(ds_test)
-    print(f'Average Test Loss: {avg_loss:.3e}')
-
-    # Save loss result
-    save_avg_loss = {"avg_loss": avg_loss}
-    with open(f"{output_path}/avg_loss.json", "w") as out_file:
-        json.dump(save_avg_loss, out_file, indent=4)
-
-
 if __name__ == '__main__':
 
     # Load training and validation data
@@ -227,8 +176,6 @@ if __name__ == '__main__':
     if mode == "train":
         train(
             model=model,
-            ds_train=ds_train,
-            ds_valid=ds_valid,
             normalize_stats=normalize_stats,
             normalize_type=normalize_type,
             num_epochs=num_epochs,
@@ -240,12 +187,10 @@ if __name__ == '__main__':
 
     elif mode == "test":
 
-        ds_test, _ = data_loader.get_data(
-            path=test_data_path, batch_size=1, shuffle=True)
-
-        predict(
+        evaluation.predict(
             model=model,
-            ds_test=ds_test,
+            test_data_path=test_data_path,
+            period_ranges=period_ranges,
             normalize_stats=normalize_stats,
             normalize_type=normalize_type,
             checkpoint_path=checkpoint_path,

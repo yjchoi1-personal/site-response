@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import pickle
 
-site_id = 'sample_FKSH17-cnn'
+site_id = 'FKSH17-cnn'
 checkpoint_path = f'../data/checkpoints/{site_id}/'
 with open(f'{checkpoint_path}/loss_histories.pkl', 'rb') as f:
     loss_data = pickle.load(f)

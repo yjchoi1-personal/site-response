@@ -234,15 +234,23 @@ class TimeSeriesTransformer2(nn.Module):
             nhead=4,
             num_encoder_layers=6,
             dim_feedforward=2048,
-            dropout=0):
+            dropout=0,
+            positional_encoding=False
+    ):
 
         super(TimeSeriesTransformer2, self).__init__()
         self.sequence_length = sequence_length
         self.n_input_features = n_input_features
         self.embedding_size = embedding_size
+        self.positional_encoding = positional_encoding
 
         # Embeddings for features and periods
         self.feature_embedding = nn.Linear(n_input_features, embedding_size)
+
+        # Positional encoding for adding notion of time step
+        if self.positional_encoding:
+            self.positional_encoder = PositionalEncoding(
+                sequence_length, embedding_size)
 
         # Transformer Encoder
         encoder_layers = nn.TransformerEncoderLayer(
@@ -259,6 +267,10 @@ class TimeSeriesTransformer2(nn.Module):
         # Embed features and periods
         x = self.feature_embedding(x)
 
+        # Add positional encoding
+        if self.positional_encoding:
+            x = self.positional_encoder(x)
+
         # Transformer encoder
         x = self.transformer_encoder(x)
 
@@ -274,11 +286,12 @@ class TimeSeriesTransformer(nn.Module):
             self,
             sequence_length,
             n_input_features,
-            embedding_size=16,
-            nhead=2,
-            num_encoder_layers=3,
-            dim_feedforward=2048,
-            dropout=0.1,
+            embedding_size=16,  # 16
+            nhead=2,  # 2
+            num_encoder_layers=3,  # 3
+            num_decoder_layers=6,  # 6
+            dim_feedforward=2048,  # 2048
+            dropout=0.1,  # 0.1
             positional_encoding=False):
         super(TimeSeriesTransformer, self).__init__()
 
@@ -301,6 +314,7 @@ class TimeSeriesTransformer(nn.Module):
             d_model=embedding_size,
             nhead=nhead,
             num_encoder_layers=num_encoder_layers,
+            num_decoder_layers=num_decoder_layers,
             dim_feedforward=dim_feedforward,
             dropout=dropout,
             batch_first=True)

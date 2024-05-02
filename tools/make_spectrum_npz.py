@@ -16,16 +16,16 @@ work_dir = "/work2/08264/baagee/frontera/site-response/"
 data_path_x = f'{work_dir}/data/datasets/{args.dataset_name}/data_all_x/*.csv'
 data_path_y = f'{work_dir}/data/datasets/{args.dataset_name}/data_all_y/*.csv'
 save_dir = f"{work_dir}/data/datasets/{args.dataset_name}/"
-save_name_train = 'spectrum_train.npz'
-save_name_test = 'spectrum_test.npz'
+save_name_train = 'spectrum_train_4features.npz'
+save_name_test = 'spectrum_test_4features.npz'
 train_range = [0, 80]
 test_range = [80, 100]
 dt = 0.01  # time step of acceleration time series
 period_ranges = ((0.01, 0.1, 167), (0.1, 1, 167), (1, 10, 166))  # for response spectrum
-n_feature_x = 3
-period_feature = False
-visualize = True
-save_csv = True
+n_feature_x = 4
+period_feature = True
+visualize = False
+save_csv = False
 
 
 csv_files_x = glob.glob(data_path_x)
@@ -218,12 +218,12 @@ def calculate_spectrum(data, dt, periods, ncols, period_feature=False):
     return response_spectrum
 
 
-# Process and save training and testing data
-training_data = process_data(
-    train_files_x, train_files_y, dt, periods, n_feature_x,
-    tag="train", period_feature=period_feature,
-    visualize=visualize, save_csv=save_csv)
-np.savez_compressed(f'{save_dir}/{save_name_train}', **training_data)
+# # Process and save training and testing data
+# training_data = process_data(
+#     train_files_x, train_files_y, dt, periods, n_feature_x,
+#     tag="train", period_feature=period_feature,
+#     visualize=visualize, save_csv=save_csv)
+# np.savez_compressed(f'{save_dir}/{save_name_train}', **training_data)
 
 testing_data = process_data(
     test_files_x, test_files_y, dt, periods, n_feature_x,
