@@ -53,7 +53,7 @@ def test_vis(
 
 def init_model(
         model_type, sequence_length, n_features,
-        positional_encoding=False):
+        **kwargs):
     """
     Initiate model
     Args:
@@ -61,6 +61,7 @@ def init_model(
         sequence_length (int): array length of spectrum values
         n_features (int): number of input features
         positional_encoding (bool): only for transformer
+        **kwargs: additional keyword arguments specific to different models
 
     Returns:
         model object
@@ -68,13 +69,28 @@ def init_model(
 
     # init model
     if model_type == "lstm":
-        model = models.SequenceLSTM(sequence_length, n_features)
+        model = models.SequenceLSTM(
+            sequence_length, n_features)
+    elif model_type == "lstm2":
+        relevant_kwargs = {
+            key: kwargs[key] for key in ['n_lstm_layers', "hidden_dim"] if key in kwargs}
+        model = models.SequenceLSTM2(
+            sequence_length, n_features, **relevant_kwargs)
     elif model_type == "cnn":
-        model = models.Conv1D(sequence_length, n_features)
+        model = models.Conv1D(
+            sequence_length, n_features)
     elif model_type == "transformer":
-        model = models.TimeSeriesTransformer(sequence_length, n_features, positional_encoding)
+        relevant_kwargs = {
+            key: kwargs[key] for key in ['positional_encoding'] if key in kwargs}
+        model = models.TimeSeriesTransformer(
+            sequence_length, n_features,
+            **relevant_kwargs)
+    elif model_type == "transformer2":
+        model = models.TimeSeriesTransformer2(
+            sequence_length, n_features)
     elif model_type == "simpleCNN":
-        model = models.simpleCNN(sequence_length, n_features)
+        model = models.simpleCNN(
+            sequence_length, n_features)
     else:
         raise ValueError
 

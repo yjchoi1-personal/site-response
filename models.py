@@ -59,6 +59,7 @@ class simpleCNN(nn.Module):
         self.flat_features = dummy_output.numel()
 
         self.fc1 = nn.Linear(self.flat_features, sequence_length)
+        self.softplus = nn.Softplus()
 
     def forward(self, x):
         x = x.permute(0, 2, 1).unsqueeze(-1)
@@ -66,6 +67,7 @@ class simpleCNN(nn.Module):
         x = self.relu(x)
         x = self.flatten(x)
         x = self.fc1(x)
+        x = self.softplus(x)
         return x
 
 
@@ -93,6 +95,7 @@ class Conv1D(nn.Module):
 
         # Dense layer
         self.dense = nn.Linear(self.flat_features, sequence_length)
+        self.softplus = nn.Softplus()
 
         # # MLP layer
         # self.mlp = build_mlp(
@@ -124,10 +127,12 @@ class Conv1D(nn.Module):
 
         x = self.flatten(x)
         x = self.dense(x)
+        x = self.softplus(x)
 
         # x = self.mlp(x)
 
         return x
+
 
 class SequenceLSTM(nn.Module):
     def __init__(self, sequence_length, n_features, mlp_hidden_dim=None, nmlp_layers=None):
@@ -169,6 +174,101 @@ class SequenceLSTM(nn.Module):
         return x
 
 
+class SequenceLSTM2(nn.Module):
+    def __init__(
+            self, sequence_length, n_features, n_lstm_layers,
+            hidden_dim, output_features=1):
+        super(SequenceLSTM2, self).__init__()
+        self.input_features = n_features
+        self.hidden_dim = hidden_dim
+        self.num_layers = n_lstm_layers
+        self.output_features = output_features
+
+        # LSTM layer
+        self.lstm = nn.LSTM(input_size=n_features,
+                            hidden_size=hidden_dim,
+                            num_layers=n_lstm_layers,
+                            bidirectional=True,
+                            batch_first=True)
+
+        # Flatten layer
+        self.flatten = nn.Flatten()
+
+        # Use a theoretical output size for flat features calculation
+        # Assuming output of second LSTM is (batch_size, sequence_length, 32)
+        self.flat_features = sequence_length * 64
+        self.dense = nn.Linear(self.flat_features, sequence_length)
+
+        # # Fully connected layer
+        # self.fc = nn.Linear(hidden_dim, output_features)
+        # # MLP
+        # mlp_hidden_dim = 128
+        # nmlp_layers = 2
+        # self.decoder = nn.Sequential(
+        #     *[build_mlp(
+        #         hidden_dim*2, [mlp_hidden_dim for _ in range(nmlp_layers)], output_features)])
+
+    def forward(self, x):
+        # Forward propagate LSTM
+        x, _ = self.lstm(x)  # lstm_out shape: (batch_size, seq_length, hidden_dim)
+
+        # Flatten the output
+        x = self.flatten(x)
+
+        # Dense
+        x = self.dense(x)
+
+        # # Fully connected layer
+        # x = self.decoder(x)
+        # x = x.squeeze(-1)
+
+        return x
+
+
+class TimeSeriesTransformer2(nn.Module):
+    def __init__(
+            self,
+            sequence_length,
+            n_input_features,
+            embedding_size=16,
+            nhead=4,
+            num_encoder_layers=6,
+            dim_feedforward=2048,
+            dropout=0):
+
+        super(TimeSeriesTransformer2, self).__init__()
+        self.sequence_length = sequence_length
+        self.n_input_features = n_input_features
+        self.embedding_size = embedding_size
+
+        # Embeddings for features and periods
+        self.feature_embedding = nn.Linear(n_input_features, embedding_size)
+
+        # Transformer Encoder
+        encoder_layers = nn.TransformerEncoderLayer(
+            embedding_size, nhead, dim_feedforward, dropout,
+            batch_first=True)
+        self.transformer_encoder = nn.TransformerEncoder(
+            encoder_layers, num_encoder_layers)
+
+        # Output layer
+        self.output_layer = nn.Linear(embedding_size, 1)
+        self.softplus = nn.Softplus()
+
+    def forward(self, x):
+        # Embed features and periods
+        x = self.feature_embedding(x)
+
+        # Transformer encoder
+        x = self.transformer_encoder(x)
+
+        # Apply the final output layer
+        x = self.output_layer(x)
+        x = self.softplus(x)
+
+        return x.squeeze(-1)
+
+
 class TimeSeriesTransformer(nn.Module):
     def __init__(
             self,
@@ -207,6 +307,7 @@ class TimeSeriesTransformer(nn.Module):
 
         # Output linear layer to match output dimensions
         self.output_linear = nn.Linear(embedding_size, 1)
+        self.softplus = nn.Softplus()
 
     def forward(self, x):
         # x shape is expected to be (nbatch, sequence_len, ndim)
@@ -228,6 +329,7 @@ class TimeSeriesTransformer(nn.Module):
 
         # Pass through the output linear layer
         x = self.output_linear(x)
+        x = self.softplus(x)
 
         return x.squeeze(-1)
 
@@ -244,7 +346,6 @@ class PositionalEncoding(nn.Module):
         embedded_positions = self.embedding(positions)
         x = x + embedded_positions
         return x
-
 
 
 def save_checkpoint(state, filename="checkpoint.pth"):

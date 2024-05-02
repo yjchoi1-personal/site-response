@@ -11,16 +11,22 @@ import argparse
 import json
 
 
-site_id = 'sample_FKSH17'
-model_id = 'cnn'
-model_type = "cnn"  # "cnn" or "transformer" or "simpleCNN"
+site_id = 'FKSH17'
+model_id = 'debug'
+model_type = "lstm2"  # "cnn" or "transformer" or "simpleCNN"
 normalize_type = "standardization"  # "minmax" or "standardization"
-mode = "test"  # "train" or "test"
+mode = "train"  # "train" or "test"
 train_batch = 4
 valid_batch = 10
 num_epochs = 100
 resume = False
+
+# For transformer
 positional_encoding = False
+
+# For lstm2
+n_lstm_layers = 3
+hidden_dim = 32
 
 data_path = f'data/datasets/{site_id}/'
 train_data_path = f'{data_path}/spectrum_train.npz'
@@ -31,6 +37,7 @@ checkpoint_file = 'checkpoint.pth'
 period_ranges = ((0.01, 0.1, 167), (0.1, 1, 167), (1, 10, 166))
 valid = True
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+criterion = nn.MSELoss()
 
 
 def train(
@@ -39,13 +46,13 @@ def train(
         num_epochs,
         checkpoint_path,
         checkpoint_file,
-        valid, device):
+        valid,
+        device):
 
     # set folders for model checkpoint.
-    if not os.path.exists(output_path):
-        os.makedirs(output_path, exist_ok=True)
+    if not os.path.exists(checkpoint_path):
+        os.makedirs(checkpoint_path, exist_ok=True)
 
-    criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
     # Initialize empty lists to store loss histories
@@ -81,7 +88,9 @@ def train(
             loss.backward()
             optimizer.step()
 
-            train_losses.append(loss.item())
+            # Track the loss
+            print(f"Step {iteration}: {loss.item():.4e}")
+            train_losses.append([iteration, loss.item()])
             train_running_loss += loss.item()
             iteration += 1
 
@@ -90,8 +99,8 @@ def train(
 
         if valid:
             valid_loss = validate_model(
-                model, ds_valid, criterion, normalize_stats, normalize_type, device)
-            valid_losses.append(valid_loss)
+                model, ds_valid, normalize_stats, normalize_type, device)
+            valid_losses.append([iteration, valid_loss])
             print(f"Epoch {epoch + 1}/{num_epochs}, Validation Loss: {valid_loss:.4e}")
 
         models.save_checkpoint({
@@ -109,12 +118,12 @@ def train(
 def validate_model(
         model,
         ds_valid,
-        criterion,
         normalize_stats, normalize_type,
         device):
 
     model.eval()
     valid_running_loss = 0.0
+
     with torch.no_grad():
         for _, (inputs, targets) in ds_valid:
             inputs, targets = inputs.to(device), targets.to(device)
@@ -136,7 +145,9 @@ def predict(
 
     # Set folders for test outputs
     if not os.path.exists(checkpoint_path):
-        os.makedirs(checkpoint_path, exist_ok=True)
+        raise ValueError(f"{checkpoint_path} not exist in {checkpoint_path}")
+    if not os.path.exists(output_path):
+        os.makedirs(output_path, exist_ok=True)
 
     # Set the model to evaluation mode
     model.eval()
@@ -151,7 +162,8 @@ def predict(
     with torch.no_grad():  # No need to track gradients during evaluation
         for i, (file_names, (inputs, targets)) in enumerate(ds_test):
             inputs, targets = inputs.to(device), targets.to(device)
-            normalized_inputs = utils.normalize_inputs(inputs, normalize_stats, normalize_type)
+            normalized_inputs = utils.normalize_inputs(
+                inputs, normalize_stats, normalize_type)
 
             # Forward pass: compute the model output
             outputs = model(normalized_inputs)
@@ -207,7 +219,9 @@ if __name__ == '__main__':
 
     # Initiate model
     model = utils.init_model(
-        model_type, sequence_length, n_features, positional_encoding
+        model_type, sequence_length, n_features,
+        positional_encoding=positional_encoding,
+        n_lstm_layers=n_lstm_layers, hidden_dim=hidden_dim
     ).to(device)
 
     if mode == "train":
