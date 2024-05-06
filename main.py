@@ -1,6 +1,6 @@
 import os.path
-import matplotlib.pyplot as plt
 import torch
+import shutil
 import numpy as np
 import data_loader
 import models
@@ -12,14 +12,14 @@ import json
 import evaluation
 
 
-site_id = 'FKSH17'
-model_id = 'cnn'
-model_type = "cnn"  # "cnn" or "transformer" or "simpleCNN"
+site = 'FKSH17'
+model_id = 'lstm'
+model_type = "lstm"  # "cnn" or "transformer" or "simpleCNN"
 normalize_type = "standardization"  # "minmax" or "standardization"
 mode = "test"  # "train" or "test"
 train_batch = 4
 valid_batch = 10
-num_epochs = 200
+num_epochs = 400
 lr = 5e-4
 resume = False
 
@@ -30,11 +30,12 @@ positional_encoding = True
 n_lstm_layers = 3
 hidden_dim = 32
 
-data_path = f'data/datasets/{site_id}/'
+config_path = "config.json"
+data_path = f'data/datasets/{site}/'
 train_data_path = f'{data_path}/spectrum_train.npz'
 test_data_path = f'{data_path}/spectrum_test.npz'
-output_path = f'data/outputs/{site_id}-{model_id}/'
-checkpoint_path = f'data/checkpoints/{site_id}-{model_id}/'
+output_path = f'data/outputs/{site}-{model_id}/'
+checkpoint_path = f'data/checkpoints/{site}-{model_id}/'
 checkpoint_file = 'checkpoint.pth'
 period_ranges = ((0.01, 0.1, 167), (0.1, 1, 167), (1, 10, 166))
 valid = True
@@ -57,10 +58,6 @@ def train(
         path=train_data_path, batch_size=train_batch)
     ds_valid, _ = data_loader.get_data(
         path=test_data_path, batch_size=valid_batch, shuffle=True)
-
-    # Set folders for model checkpoint.
-    if not os.path.exists(checkpoint_path):
-        os.makedirs(checkpoint_path, exist_ok=True)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
@@ -123,6 +120,11 @@ def train(
     with open(f'{checkpoint_path}/loss_histories.pkl', 'wb') as f:
         pickle.dump({'train_losses': train_losses, 'valid_losses': valid_losses}, f)
 
+    # Save learning history
+    utils.plot_loss(
+        data_path=f'{checkpoint_path}/loss_histories.pkl',
+        save_path=f'{checkpoint_path}/loss_histories.png')
+
 
 def validate_model(
         model,
@@ -166,11 +168,21 @@ if __name__ == '__main__':
     sequence_length = ds_batch[1][0].shape[1]
     n_features = ds_batch[1][0].shape[-1]
 
+    # Set folders for model checkpoint.
+    if not os.path.exists(checkpoint_path):
+        os.makedirs(checkpoint_path, exist_ok=True)
+
+    # Get model config
+    with open(config_path) as config_file:
+        config = json.load(config_file)
+    # Save current config to model directory
+    shutil.copy(config_path, f"{checkpoint_path}/config.json")
+
     # Initiate model
+    hyperparams = config['model'].get(model_type)
     model = utils.init_model(
         model_type, sequence_length, n_features,
-        positional_encoding=positional_encoding,
-        n_lstm_layers=n_lstm_layers, hidden_dim=hidden_dim
+        **hyperparams
     ).to(device)
 
     if mode == "train":
@@ -187,10 +199,13 @@ if __name__ == '__main__':
 
     elif mode == "test":
 
+        periods = [np.linspace(start, end, num, endpoint=False) for start, end, num in period_ranges]
+        periods = np.concatenate(periods)
+
         evaluation.predict(
             model=model,
             test_data_path=test_data_path,
-            period_ranges=period_ranges,
+            periods=periods,
             normalize_stats=normalize_stats,
             normalize_type=normalize_type,
             checkpoint_path=checkpoint_path,

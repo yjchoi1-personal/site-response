@@ -2,13 +2,37 @@ import numpy as np
 import eqsig.single
 import torch
 import models
-
+import pickle
 import matplotlib.pyplot as plt
 import numpy as np
 
 
+def compare_models():
+    pass
+
+
+def plot_loss(data_path, save_path):
+    with open(data_path, 'rb') as f:
+        loss_data = pickle.load(f)
+        train_losses = loss_data['train_losses']
+        valid_losses = loss_data['valid_losses']
+
+    # Assuming 'train_losses' and 'valid_losses' are loaded
+    plt.figure(figsize=(5, 3.5))
+    plt.plot(
+        [loss[0] for loss in train_losses], [loss[1] for loss in train_losses], label='Train')
+    if valid_losses:
+        plt.plot([loss[0] for loss in valid_losses], [loss[1] for loss in valid_losses], label='Validation')
+    plt.xlabel('Iteration')
+    plt.ylabel('Loss')
+    plt.yscale('log')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(save_path)
+
+
 def test_vis(
-        period_ranges,
+        periods,
         response_pred,
         response_true,
         loss,
@@ -30,10 +54,6 @@ def test_vis(
     Returns:
     None
     """
-    # Concatenate periods from the defined ranges
-    periods = [np.linspace(start, end, num, endpoint=False) for start, end, num in period_ranges]
-    periods = np.concatenate(periods)
-
     # Create the plot
     fig, ax = plt.subplots(figsize=(5, 3.5))
     ax.plot(periods, response_pred,
@@ -72,8 +92,14 @@ def init_model(
 
     # init model
     if model_type == "lstm":
+        relevant_kwargs = {
+            key: kwargs[key] for key in [
+                'n_lstm_layers',
+                "hidden_dim"
+            ] if key in kwargs
+        }
         model = models.SequenceLSTM(
-            sequence_length, n_features)
+            sequence_length, n_features, **relevant_kwargs)
 
     elif model_type == "lstm2":
         relevant_kwargs = {

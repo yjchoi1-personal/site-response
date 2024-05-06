@@ -135,12 +135,19 @@ class Conv1D(nn.Module):
 
 
 class SequenceLSTM(nn.Module):
-    def __init__(self, sequence_length, n_features, mlp_hidden_dim=None, nmlp_layers=None):
+    def __init__(
+            self,
+            sequence_length,
+            n_features,
+            hidden_dim=32,
+            n_lstm_layers=3):
         super(SequenceLSTM, self).__init__()
-        self.lstm1 = nn.LSTM(input_size=n_features, hidden_size=32, batch_first=True, bidirectional=True)
-        self.lstm2 = nn.LSTM(input_size=64, hidden_size=32, batch_first=True, bidirectional=True)
-        self.lstm3 = nn.LSTM(input_size=64, hidden_size=32, batch_first=True, bidirectional=True)
-
+        # LSTM layer
+        self.lstm = nn.LSTM(input_size=n_features,
+                            hidden_size=hidden_dim,
+                            num_layers=n_lstm_layers,
+                            bidirectional=True,
+                            batch_first=True)
         # Flatten layer
         self.flatten = nn.Flatten()
 
@@ -157,9 +164,7 @@ class SequenceLSTM(nn.Module):
     def forward(self, x):
 
         # Process through LSTM layers
-        x, _ = self.lstm1(x)
-        x, _ = self.lstm2(x)
-        x, _ = self.lstm3(x)
+        x, _ = self.lstm(x)
 
         # Flatten the output
         x = self.flatten(x)
