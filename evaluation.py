@@ -7,6 +7,7 @@ import pickle
 import data_loader
 import numpy as np
 import pandas as pd
+import time
 
 # site = 'FKSH17'
 # data_path = f'data/datasets/{site}/'
@@ -47,6 +48,7 @@ def predict(
     model.load_state_dict(checkpoint['model_state_dict'])
     model.to(device)
 
+    begin = time.time()
     with torch.no_grad():  # No need to track gradients during evaluation
         for i, (file_names, (inputs, targets)) in enumerate(ds_test):
             inputs, targets = inputs.to(device), targets.to(device)
@@ -98,12 +100,16 @@ def predict(
                 response_pred, response_true, loss,
                 output_path, file_names, i)
 
+    end = time.time()
+    total_time = end - begin
     # Report total average loss
     avg_loss = total_loss / len(ds_test)
     print(f'Average Test Loss: {avg_loss:.3e}')
+    # Report avg time for single prediction
+    avg_time = total_time / len(ds_test)
 
     # Save result
-    save_avg_loss = {"avg_loss": avg_loss}
+    save_avg_loss = {"avg_loss": avg_loss, "avg_time": avg_time}
     with open(f"{output_path}/avg_loss.json", "w") as out_file:
         json.dump(save_avg_loss, out_file, indent=4)
 
