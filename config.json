@@ -1,0 +1,26 @@
+{
+  "model": {
+    "lstm": {
+      "n_lstm_layers": 3,
+      "hidden_dim": 32
+    },
+    "transformer": {
+      "embedding_size": 16,
+      "nhead": 4,
+      "num_encoder_layers": 3,
+      "num_decoder_layers": 3,
+      "dim_feedforward": 128,
+      "dropout": 0.1,
+      "positional_encoding": true
+    },
+    "cnn": {
+      "out_channels":  [16, 32, 16],
+      "kernel_sizes": [24, 12, 6],
+      "pool_sizes": [2, 2, 2]
+    }
+  },
+  "optimizer": {
+    "lr": 5e-4,
+    "num_epochs": 500
+  }
+}
