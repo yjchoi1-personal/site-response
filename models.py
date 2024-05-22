@@ -72,66 +72,81 @@ class simpleCNN(nn.Module):
 
 
 class Conv1D(nn.Module):
-    def __init__(self, sequence_length, n_features, mlp_hidden_dim=None, nmlp_layers=None):
+    """
+    A 1D convolutional neural network module for sequence processing.
+
+    Attributes:
+        sequence_length (int): Length of the input sequences.
+        n_features (int): Number of features per time step in the input.
+        out_channels (list of int): List of output channels for each convolutional layer.
+        kernel_sizes (list of int): List of kernel sizes for each convolutional layer.
+        pool_sizes (list of int): List of pool sizes for each pooling layer after convolution.
+
+    """
+
+    def __init__(
+            self,
+            sequence_length,
+            n_features,
+            out_channels=[16, 32, 16],
+            kernel_sizes=[24, 12, 6],
+            pool_sizes=[2, 2, 2]
+    ):
         super(Conv1D, self).__init__()
-        self.conv1 = nn.Conv1d(in_channels=n_features, out_channels=16, kernel_size=24)
-        self.relu1 = nn.ReLU()
-        self.pool1 = nn.MaxPool1d(kernel_size=2)
 
-        self.conv2 = nn.Conv1d(in_channels=16, out_channels=32, kernel_size=12)
-        self.relu2 = nn.ReLU()
-        self.pool2 = nn.MaxPool1d(kernel_size=2)
+        if not (len(out_channels) == len(kernel_sizes) == len(pool_sizes)):
+            raise ValueError("The length of out_channels, kernel_sizes, and pool_sizes must be the same.")
 
-        self.conv3 = nn.Conv1d(in_channels=32, out_channels=16, kernel_size=6)
-        self.relu3 = nn.ReLU()
-        self.pool3 = nn.MaxPool1d(kernel_size=2)
+        n_conv_layers = len(out_channels)
+        conv_layers = []
+        current_channels = n_features
 
+        for i in range(n_conv_layers):
+            conv = nn.Conv1d(in_channels=current_channels, out_channels=out_channels[i],
+                             kernel_size=kernel_sizes[i])
+            relu = nn.ReLU()
+            pool = nn.MaxPool1d(kernel_size=pool_sizes[i])
+            conv_layers += [conv, relu, pool]
+            current_channels = out_channels[i]
+
+        self.conv_layers = nn.Sequential(*conv_layers)
         self.flatten = nn.Flatten()
 
-        # Dummy input to calculate the shape after conv and pool layers
+        # Calculating the output dimensions after convolutional and pooling layers
         dummy_input = torch.randn(1, n_features, sequence_length)
-        dummy_output = self.pool3(self.conv3(self.pool2(self.conv2(self.pool1(self.conv1(dummy_input))))))
+        dummy_output = self.conv_layers(dummy_input)
         self.flat_features = dummy_output.numel()
 
-        # Dense layer
+        # Dense layer to output the original sequence length
         self.dense = nn.Linear(self.flat_features, sequence_length)
         self.softplus = nn.Softplus()
 
-        # # MLP layer
-        # self.mlp = build_mlp(
-        #     self.flat_features, [mlp_hidden_dim for _ in range(nmlp_layers)], output_size=sequence_length)
-        # self.layer_norm = nn.LayerNorm(sequence_length)
-
     def forward(self, x):
-        # Reshape input to (batch_size, embedding, sequence_length)
+        """
+        Defines the computation performed at every call.
+
+        Args:
+            x (torch.Tensor): The input data tensor (batch_size, n_features, sequence_length).
+
+        Returns:
+            torch.Tensor: The output data tensor after passing through the convolutional layers,
+                          being flattened and processed by a dense and activation layer.
+        """
+        # Ensure input tensor is in the correct shape: (batch_size, n_features, sequence_length)
         x = x.permute(0, 2, 1)
 
-        # Shape: (batch_size, embedding, time_steps) -> (batch_size, 16, time_steps - 24 + 1)
-        x = self.conv1(x)
-        x = self.relu1(x)
-
-        # Shape: (batch_size, 16, time_steps - 24 + 1) -> (batch_size, 16, (time_steps - 24 + 1) / 2)
-        x = self.pool1(x)
-
-        # Shape: (batch_size, 16, (time_steps - 24 + 1) / 2) -> (batch_size, 32, ((time_steps - 24 + 1) / 2 - 12 + 1))
-        x = self.conv2(x)
-        x = self.relu2(x)
-
-        # Shape: (batch_size, 32, ((time_steps - 24 + 1) / 2 - 12 + 1)) -> (batch_size, 32, (((time_steps - 24 + 1) / 2 - 12 + 1) / 2))
-        x = self.pool2(x)
-
-        x = self.conv3(x)
-        x = self.relu3(x)
-
-        x = self.pool3(x)
-
-        x = self.flatten(x)
-        x = self.dense(x)
-        x = self.softplus(x)
-
-        # x = self.mlp(x)
+        x = self.conv_layers(x)  # Pass through convolutional layers
+        x = self.flatten(x)      # Flatten the output for the dense layer
+        x = self.dense(x)        # Dense layer processing
+        x = self.softplus(x)     # Activation function
 
         return x
+
+
+# class EncodeDecodeCNN(nn.Module):
+#     def __init__(
+#             self,
+#     ):
 
 
 class SequenceLSTM(nn.Module):
@@ -292,7 +307,7 @@ class TimeSeriesTransformer(nn.Module):
             sequence_length,
             n_input_features,
             embedding_size=16,  # 16
-            nhead=2,  # 2
+            nhead=4,  # 2
             num_encoder_layers=3,  # 3
             num_decoder_layers=6,  # 6
             dim_feedforward=2048,  # 2048

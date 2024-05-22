@@ -112,8 +112,15 @@ def init_model(
             sequence_length, n_features, **relevant_kwargs)
 
     elif model_type == "cnn":
+        relevant_kwargs = {
+            key: kwargs[key] for key in [
+                'out_channels',
+                'kernel_sizes',
+                'pool_sizes'
+            ] if key in kwargs
+        }
         model = models.Conv1D(
-            sequence_length, n_features)
+            sequence_length, n_features, **relevant_kwargs)
 
     elif model_type == "transformer":
         relevant_kwargs = {
