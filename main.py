@@ -12,25 +12,24 @@ import json
 import evaluation
 
 
-site = 'FKSH17'
-model_id = 'lstm'
-model_type = "lstm"  # "cnn" or "transformer" or "simpleCNN"
+parser = argparse.ArgumentParser()
+parser.add_argument('--config_file', default="config.json", type=str, help="Path to config json file")
+parser.add_argument('--site', default="MYGH04", type=str, help="Site name, e.g., FKSH17")
+parser.add_argument('--model_id', default="transformer", type=str, help="Model id to save the result with")
+parser.add_argument('--model_type', default="transformer", type=str, help="Model types (cnn, lstm, transformer)")
+parser.add_argument('--mode', default="test", type=str, help="Mode (train or test)")
+args = parser.parse_args()
+
+config_path = args.config_file
+site = args.site
+model_id = args.model_id
+model_type = args.model_type  # "cnn" or "transformer" or "simpleCNN"
+mode = args.mode  # "train" or "test"
+
 normalize_type = "standardization"  # "minmax" or "standardization"
-mode = "test"  # "train" or "test"
 train_batch = 4
 valid_batch = 10
-num_epochs = 400
-lr = 5e-4
 resume = False
-
-# For transformer
-positional_encoding = True
-
-# For lstm2
-n_lstm_layers = 3
-hidden_dim = 32
-
-config_path = "config.json"
 data_path = f'data/datasets/{site}/'
 train_data_path = f'{data_path}/spectrum_train.npz'
 test_data_path = f'{data_path}/spectrum_test.npz'
@@ -59,7 +58,7 @@ def train(
     ds_valid, _ = data_loader.get_data(
         path=test_data_path, batch_size=valid_batch, shuffle=True)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=config['optimizer']['lr'])
 
     # Initialize empty lists to store loss histories
     train_losses = []
@@ -176,7 +175,8 @@ if __name__ == '__main__':
     with open(config_path) as config_file:
         config = json.load(config_file)
     # Save current config to model directory
-    shutil.copy(config_path, f"{checkpoint_path}/config.json")
+    if args.mode == 'train':
+        shutil.copy(config_path, f"{checkpoint_path}/config.json")
 
     # Initiate model
     hyperparams = config['model'].get(model_type)
@@ -190,7 +190,7 @@ if __name__ == '__main__':
             model=model,
             normalize_stats=normalize_stats,
             normalize_type=normalize_type,
-            num_epochs=num_epochs,
+            num_epochs=config['optimizer']['num_epochs'],
             checkpoint_path=checkpoint_path,
             checkpoint_file=checkpoint_file,
             valid=True,
