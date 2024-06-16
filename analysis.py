@@ -171,10 +171,13 @@ def site_analysis(site):
     ax.set_xscale('log')
     plt.legend()
     plt.tight_layout()
-    plt.savefig(f'{save_dir}/{site}-mse.{fig_format}')
+    plt.savefig(f'{save_dir}/{site}-avg_error.{fig_format}')
 
-    with open(f'{save_dir}/{site}-mse.pkl', 'wb') as file:
+    with open(f'{save_dir}/{site}-avg_error.pkl', 'wb') as file:
         pickle.dump(avg_error, file, protocol=pickle.HIGHEST_PROTOCOL)
+
+    with open(f'{save_dir}/{site}-all_results.pkl', 'wb') as file:
+        pickle.dump(result_dict, file, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 # Global error
@@ -189,7 +192,7 @@ def global_error(sites):
     for site in sites:
         analysis_dir = f'data/analysis/{site}'
 
-        with open(f'{analysis_dir}/{site}-mse.pkl', 'rb') as file:
+        with open(f'{analysis_dir}/{site}-avg_error.pkl', 'rb') as file:
             avg_error = pickle.load(file)
 
         avg_errors[site] = avg_error
@@ -205,7 +208,9 @@ def global_error(sites):
         n_sites = 0
         for site, results in avg_errors.items():
             n_sites += 1
-            global_errors[model] += results[model] / n_sites
+            global_errors[model] += results[model]
+    for key, value in global_errors.items():
+        global_errors[key] = value / n_sites
 
     fig, ax = plt.subplots(figsize=(5, 3.5))
     for model in models:
