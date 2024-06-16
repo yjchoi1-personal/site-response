@@ -235,9 +235,6 @@ def global_error(sites):
 
 def get_mse(sites):
 
-    # Save dir
-    save_dir = f'data/analysis/'
-
     # Make dict to contain mse
     mse_errors = {}
     models = list(config.keys())
@@ -247,30 +244,32 @@ def get_mse(sites):
     # Fill the dict with mse
     for model in models:
         for site in sites:
-            mse_path = f'data/outputs/{site}-{model}/avg_loss.json'
+            # Load result
+            result_path = f'data/analysis/{site}/{site}-all_results.pkl'
+            with open(result_path, 'rb') as file:
+                result = pickle.load(file)
 
-            with open(mse_path, 'rb') as file:
-                mse = json.load(file)
-
-            mse_errors[model].append(mse['avg_loss'])
+            # Compute mse
+            total_mse = 0.0
+            n_data = len(result)
+            for key, value in result.items():
+                mse = np.mean(value[model]['error_evolution'])
+                total_mse += mse
+            avg_mse = total_mse / n_data
+            mse_errors[model].append(avg_mse)
 
     df = pd.DataFrame.from_dict(mse_errors)
 
-    a = 1
-
-
-
-
-
 
 sites = ("FKSH17", "IWTH21", "FKSH18", "FKSH19", "IBRH13", "IWTH02", "IWTH05", "IWTH12", "IWTH14", "IWTH22", "IWTH27", "MYGH04")
+# sites = ("FKSH17", "IWTH21", "FKSH18")
 
-# # Site analysis
-# for site_name in sites:
-#     site_analysis(site_name)
+# Site analysis
+for site_name in sites:
+    site_analysis(site_name)
 
-# # Make global error
-# global_error(sites=sites)
+# Make global error
+global_error(sites=sites)
 
 # MSE
 get_mse(sites)
