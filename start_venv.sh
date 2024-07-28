@@ -11,11 +11,15 @@ source venv/bin/activate
 
 # test env
 # --------
-echo 'which python -> venv'
-which python
+if [ "$1" = "--run-tests=true" ]; then
+  echo 'which python -> venv'
+  which python
 
-echo 'test_pytorch.py -> random tensor'
-python test/test_pytorch.py
+  echo 'test_pytorch.py -> random tensor'
+  python test/test_pytorch.py
 
-echo 'test_pytorch_cuda_gpu.py -> True if GPU'
-python test/test_pytorch_cuda_gpu.py
+  echo 'test_pytorch_cuda_gpu.py -> True if GPU'
+  python test/test_pytorch_cuda_gpu.py
+else
+  echo "Skipping tests. To run tests, use the argument --run-tests=true"
+fi
