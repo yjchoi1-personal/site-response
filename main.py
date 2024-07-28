@@ -15,9 +15,9 @@ import evaluation
 parser = argparse.ArgumentParser()
 parser.add_argument('--config_file', default="config.json", type=str, help="Path to config json file")
 parser.add_argument('--site', default="MYGH04", type=str, help="Site name, e.g., FKSH17")
-parser.add_argument('--model_id', default="transformer", type=str, help="Model id to save the result with")
-parser.add_argument('--model_type', default="transformer", type=str, help="Model types (cnn, lstm, transformer)")
-parser.add_argument('--mode', default="test", type=str, help="Mode (train or test)")
+parser.add_argument('--model_id', default="lstm", type=str, help="Model id to save the result with")
+parser.add_argument('--model_type', default="lstm", type=str, help="Model types (cnn, lstm, transformer)")
+parser.add_argument('--mode', default="train", type=str, help="Mode (train or test)")
 args = parser.parse_args()
 
 config_path = args.config_file
@@ -184,6 +184,10 @@ if __name__ == '__main__':
         model_type, sequence_length, n_features,
         **hyperparams
     ).to(device)
+
+    # Print the number of parameters in the model
+    num_params = sum(p.numel() for p in model.parameters())
+    print(f'The model has {num_params:,} parameters.')
 
     if mode == "train":
         train(
