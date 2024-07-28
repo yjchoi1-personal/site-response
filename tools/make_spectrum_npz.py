@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset_name', default="FKSH19", type=str, help="Earthquake data name")
+parser.add_argument('--dataset_name', default="all_sites", type=str, help="Earthquake data name")
 args = parser.parse_args()
 
 work_dir = "/work2/08264/baagee/frontera/site-response/"
@@ -17,9 +17,11 @@ data_path_x = f'{work_dir}/data/datasets/{args.dataset_name}/data_all_x/*.csv'
 data_path_y = f'{work_dir}/data/datasets/{args.dataset_name}/data_all_y/*.csv'
 save_dir = f"{work_dir}/data/datasets/{args.dataset_name}/"
 save_name_train = 'spectrum_train.npz'
+save_name_valid = 'spectrum_valid.npz'
 save_name_test = 'spectrum_test.npz'
 train_range = [0, 80]
-test_range = [80, 100]
+valid_range = [80, 90]
+test_range = [90, 100]
 dt = 0.01  # time step of acceleration time series
 period_ranges = ((0.01, 0.1, 167), (0.1, 1, 167), (1, 10, 166))  # for response spectrum
 n_feature_x = 3
@@ -45,6 +47,8 @@ periods = [np.linspace(start, end, num, endpoint=False) for start, end, num in p
 # Split data into training and testing
 train_files_x = csv_files_x[train_range[0]:train_range[1]]
 train_files_y = csv_files_y[train_range[0]:train_range[1]]
+valid_files_x = csv_files_x[valid_range[0]:valid_range[1]]
+valid_files_y = csv_files_x[valid_range[0]:valid_range[1]]
 test_files_x = csv_files_x[test_range[0]:test_range[1]]
 test_files_y = csv_files_y[test_range[0]:test_range[1]]
 
@@ -224,6 +228,12 @@ training_data = process_data(
     tag="train", period_feature=period_feature,
     visualize=visualize, save_csv=save_csv)
 np.savez_compressed(f'{save_dir}/{save_name_train}', **training_data)
+
+valid_data = process_data(
+    valid_files_x, valid_files_y, dt, periods, n_feature_x,
+    tag="valid", period_feature=period_feature,
+    visualize=visualize, save_csv=save_csv)
+np.savez_compressed(f'{save_dir}/{save_name_valid}', **valid_data)
 
 testing_data = process_data(
     test_files_x, test_files_y, dt, periods, n_feature_x,
