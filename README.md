@@ -19,7 +19,7 @@ cd site-response
 
 # Initiate virtual environment
 python3 -m virtualenv venv
-source venv/bin/activate
+source venv/bin/activate  # For windows, just `.\venv\Scripts\activate`
 
 # Install requirements
 python -m pip install --upgrade pip
