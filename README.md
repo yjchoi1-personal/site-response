@@ -52,7 +52,7 @@ After having the training data at `./data` you can run the `lstm` model training
 ```shell
 python train.py \
 --config_file config.json \
---stie MYGH04 \
+--site MYGH04 \
 --model_id my_lstm \
 --model_type lstm \
 --mode train
