@@ -26,39 +26,44 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-## Download dataset
-> Dataset is not published yet.
+## Validate the installation
+```shell
+python -m pytest test/ -vs
+```
 
-In the data folder, `datasets` and `datasets_publish` contains the same raw data for KiK-net 
-and result from SHAKE2000. However, `datasets` are the directory that was actaully used for training code 
-which contains some experimental dummy data. `datasets_publish` is clearned version of `datasets` 
-which only contains raw data. 
+## Dataset
+> Full dataset is not published yet, but available upon request.
 
-The folder names like `FKSH17`, `IWTH02`, ..., correspond to KiK-net station (or site). 
-Each folder contains `data_all_x` and `data_all_y`, 
-which contains bedrock measurements and ground surface measurements in `.csv` format, respectively, 
-for 100 earthquake events. 
-Each pair of `csv` comprises a single training example. 
-For example, in `FKSH17`, `data_all_x/FKSH17_1001.csv` is a bedrock measurement for a single event, 
-and `data_all_y/FKSH17_2101.csv` is the ground response for the corresponding event. 
-
-For each site, we process these time domain `.csv` files to frequency domain, 
-and split those into train, test, and validation set using `.npz` format. 
-The deep learning models are trained for each site to consider site-specific response. 
-
+We provide a sample dataset in the `./data` folder. Inside the `./data` folder, you can find `datasets` directory which contains the `FKSH19` site data. It includes the training, validation, and test data, named as `spectrum_train.npz`, `spectrum_valid.npz`, and `spectrum_test.npz`, respectively. The name `FKSH19` corresponds the KiK-net station name (or site name).
 
 ## Run
-After having the training data at `./data` you can run the `lstm` model training as follows.
+After having the training data at `./data/datasets/`, you can run the model training. The following command trains the `cnn` model. You can change the model type to `lstm` or `transformer` to train other models.
+
 ```shell
-python train.py \
+python main.py \
 --config_file config.json \
---site MYGH04 \
---model_id my_lstm \
---model_type lstm \
+--site FKSH19 \
+--model_id my_cnn_model \
+--model_type cnn \
 --mode train
 ```
 
-## Instruction
+The model will be saved at `./data/checkpoints/`.
+
+To test the model, run the following command.
+
+```shell
+python main.py \
+--config_file config.json \
+--site FKSH19 \
+--model_id my_cnn_model \
+--model_type cnn \
+--mode test
+```
+
+The results will be saved at `./data/outputs/`.
+
+## Arguments
 `--config_file` (default: `config.json`)
 
 * Description: Path to the configuration JSON file
@@ -75,18 +80,18 @@ python train.py \
 
 `--model_id` (default: `lstm`)
 
-* Description: Unique identifier for saving model results
-* Usage: `--model_id MODEL_IDENTIFIER`
-* Example: `--model_id lstm_experiment1`
+* Description: the user-defined model name to be saved
+* Usage: `--model_id USER_DEFINED_MODEL_NAME`
+* Example: `--model_id my_cnn_model`
 
 
 `--model_type` (default: `lstm`)
 
 * Description: Type of machine learning model to use
 * Available options:
-  * cnn (Convolutional Neural Network)
-  * lstm (Long Short-Term Memory)
-  * transformer
+  * `cnn`
+  * `lstm`
+  * `transformer`
 * Usage: `--model_type MODEL_TYPE`
 * Example: `--model_type cnn`
 
