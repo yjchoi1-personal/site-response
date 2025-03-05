@@ -19,8 +19,8 @@ git clone https://github.com/yjchoi1-personal/site-response.git
 cd site-response
 
 # Initiate virtual environment
-python3 -m virtualenv venv
-source venv/bin/activate  # For windows, just `.\venv\Scripts\activate`
+python3 -m venv venv
+source venv/bin/activate
 
 # Install requirements
 python -m pip install --upgrade pip
@@ -38,6 +38,8 @@ cd site-response
 
 # Initiate virtual environment
 python -m venv venv
+
+# cmd is recommended
 cmd
 cd path\to\site-response
 .\venv\Scripts\activate.bat

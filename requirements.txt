@@ -6,3 +6,4 @@ torch
 pandas
 ray[tune]
 pytest
+python_version >= "3.9"
