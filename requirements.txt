@@ -5,4 +5,4 @@ tqdm
 torch
 pandas
 ray[tune]
-pip install pytest
+pytest

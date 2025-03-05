@@ -10,6 +10,7 @@ We explain details about data in `README.md` included in this repository.
 
 
 ## Install
+For linux or wsl2 system,
 ```shell
 # Clone repository
 git clone https://github.com/yjchoi1-personal/site-response.git
@@ -20,6 +21,26 @@ cd site-response
 # Initiate virtual environment
 python3 -m virtualenv venv
 source venv/bin/activate  # For windows, just `.\venv\Scripts\activate`
+
+# Install requirements
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+For windows system,
+
+```shell
+# Clone repository
+git clone https://github.com/yjchoi1-personal/site-response.git
+
+# Change current directory to the repository
+cd site-response
+
+# Initiate virtual environment
+python -m venv venv
+cmd
+cd path\to\site-response
+.\venv\Scripts\activate.bat
 
 # Install requirements
 python -m pip install --upgrade pip

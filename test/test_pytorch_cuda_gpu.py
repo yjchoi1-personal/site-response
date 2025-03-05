@@ -6,8 +6,6 @@ def test_pytorch_cuda_gpu():
     
     if not torch.cuda.is_available():
         pytest.warns(UserWarning, match="CUDA not available")
-        # or more explicitly:
-        pytest.warn("CUDA is not available, using CPU instead")
     else:
         print("CUDA is available")
         
